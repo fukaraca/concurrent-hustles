@@ -1,12 +1,10 @@
-// Question 6: Publisher-Subscriber Pattern
+// Publisher-Subscriber Pattern
 // Implement a thread-safe pub/sub system
 
-package main
+package concurrent_hustles
 
 import (
-	"fmt"
 	"sync"
-	"time"
 )
 
 type Message struct {
@@ -51,10 +49,11 @@ func (ps *PubSub) Subscribe(topic string) <-chan Message {
 func (ps *PubSub) Publish(msg Message) {
 	ps.mu.RLock()
 	if ps.closed {
+		ps.mu.RUnlock()
 		return
 	}
-	subs := append([]chan Message(nil), ps.subscribers[msg.Topic]...)
 	ps.mu.RUnlock()
+	subs := append([]chan Message(nil), ps.subscribers[msg.Topic]...)
 	for _, c := range subs {
 		select {
 		case c <- msg:
@@ -108,63 +107,3 @@ func (ps *PubSub) Close() {
 	ps.subscribers = make(map[string][]chan Message)
 	ps.closed = true
 }
-
-func main() {
-	ps := NewPubSub()
-	defer ps.Close()
-
-	var wg sync.WaitGroup
-
-	// Subscriber 1: sports
-	wg.Add(1)
-	sub1 := ps.Subscribe("sports")
-	go func() {
-		defer wg.Done()
-		for msg := range sub1 {
-			fmt.Printf("[Sub1] Received: %s - %s\n", msg.Topic, msg.Content)
-		}
-	}()
-
-	// Subscriber 2: sports and news
-	wg.Add(1)
-	sub2Sports := ps.Subscribe("sports")
-	sub2News := ps.Subscribe("news")
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case msg, ok := <-sub2Sports:
-				if !ok {
-					return
-				}
-				fmt.Printf("[Sub2] Received: %s - %s\n", msg.Topic, msg.Content)
-			case msg, ok := <-sub2News:
-				if !ok {
-					return
-				}
-				fmt.Printf("[Sub2] Received: %s - %s\n", msg.Topic, msg.Content)
-			}
-		}
-	}()
-
-	// Give subscribers time to set up
-	time.Sleep(100 * time.Millisecond)
-
-	// Publish messages
-	ps.Publish(Message{Topic: "sports", Content: "Team A wins!"})
-	ps.Publish(Message{Topic: "news", Content: "Breaking news!"})
-	ps.Publish(Message{Topic: "sports", Content: "Player traded1"})
-	ps.Publish(Message{Topic: "sports", Content: "Player traded2"})
-	ps.Publish(Message{Topic: "sports", Content: "Player traded3"})
-	ps.Publish(Message{Topic: "sports", Content: "Player traded4"})
-	ps.Publish(Message{Topic: "sports", Content: "Player traded5"})
-	time.Sleep(200 * time.Millisecond)
-
-	ps.Close()
-
-	wg.Wait()
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected: Sub1 receives 2 sports messages, Sub2 receives all 3 messages
-// No race conditions, no deadlocks, clean shutdown

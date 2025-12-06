@@ -1,12 +1,11 @@
-// Question 7: Pipeline Pattern with Error Handling
+// Pipeline Pattern with Error Handling
 // Implement a cancellable pipeline that processes data through multiple stages
 
-package main
+package concurrent_hustles
 
 import (
 	"context"
 	"fmt"
-	"sync"
 )
 
 // Generate numbers from 1 to n
@@ -122,40 +121,3 @@ func runPipeline(ctx context.Context, n int) (int, error) {
 
 	return r, nil
 }
-
-func main() {
-	fmt.Println("=== Test 1: Complete pipeline ===")
-	ctx1 := context.Background()
-	result1, err1 := runPipeline(ctx1, 10)
-	if err1 != nil {
-		fmt.Printf("Error: %v\n", err1)
-	} else {
-		fmt.Printf("Result: %d\n", result1)
-		fmt.Printf("Expected: %d (1² + 3² + 5² + 7² + 9² = 1+9+25+49+81 = 165)\n", 165)
-	}
-
-	fmt.Println("\n=== Test 2: Cancelled pipeline ===")
-	ctx2, cancel := context.WithCancel(context.Background())
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result2, err2 := runPipeline(ctx2, 1000000)
-		if err2 != nil {
-			fmt.Printf("Pipeline cancelled (expected): %v\n", err2)
-		} else {
-			fmt.Printf("Result: %d\n", result2)
-		}
-	}()
-
-	// Cancel after a short delay
-	cancel()
-	wg.Wait()
-	fmt.Println("Pipeline shutdown complete")
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected Test 1: Result should be 165
-// Expected Test 2: Pipeline should cancel gracefully
-// No goroutine leaks, no race conditions

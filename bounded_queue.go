@@ -1,7 +1,7 @@
-// Question 10: Bounded Queue with Blocking Operations
+// Bounded Queue with Blocking Operations
 // Implement a thread-safe bounded queue with blocking enqueue/dequeue
 
-package main
+package concurrent_hustles
 
 import (
 	"errors"
@@ -170,35 +170,3 @@ func consumer(id int, queue *BoundedQueue, wg *sync.WaitGroup) {
 		time.Sleep(150 * time.Millisecond)
 	}
 }
-
-func main() {
-	queue := NewBoundedQueue(5)
-	var wg sync.WaitGroup
-
-	// Start 2 producers
-	wg.Add(2)
-	go producer(1, queue, 5, &wg)
-	go producer(2, queue, 5, &wg)
-	// Start 3 consumers
-	wg.Add(3)
-	go consumer(1, queue, &wg)
-	go consumer(2, queue, &wg)
-	go consumer(3, queue, &wg)
-
-	// Wait for producers to finish
-	time.Sleep(2 * time.Second)
-
-	// Close queue and wait for consumers to finish
-	fmt.Println("\nClosing queue...")
-	queue.Close()
-	wg.Wait()
-
-	fmt.Println("All goroutines finished")
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected: Producers block when queue is full
-// Consumers block when queue is empty
-// All items produced are consumed
-// Clean shutdown after Close()
-// No race conditions, no deadlocks

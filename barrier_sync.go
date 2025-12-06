@@ -1,7 +1,7 @@
-// Question 8: Barrier Synchronization
+//Barrier Synchronization
 // Implement a barrier that synchronizes multiple goroutines at a point
 
-package main
+package concurrent_hustles
 
 import (
 	"fmt"
@@ -61,31 +61,3 @@ func worker(id int, barrier *Barrier, phases int) {
 	}
 	fmt.Printf("Worker %d finished all phases\n", id)
 }
-
-func main() {
-	numWorkers := 5
-	numPhases := 10
-
-	barrier := NewBarrier(numWorkers)
-	var wg sync.WaitGroup
-
-	start := time.Now()
-
-	// Launch workers
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			worker(id, barrier, numPhases)
-		}(i)
-	}
-
-	wg.Wait()
-	elapsed := time.Since(start)
-
-	fmt.Printf("\nAll workers completed in %v\n", elapsed)
-	fmt.Println("Workers should have synchronized at each phase boundary")
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected: All workers should synchronize at each phase

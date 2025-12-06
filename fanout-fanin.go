@@ -1,7 +1,7 @@
-// Question 3: Fan-Out, Fan-In Pattern
+// Fan-Out, Fan-In Pattern
 // Implement a pipeline that fans out work to multiple processors and fans in results
 
-package main
+package concurrent_hustles
 
 import (
 	"fmt"
@@ -57,38 +57,3 @@ func fanIn(channels ...<-chan int) <-chan int {
 
 	return out
 }
-
-func main() {
-	start := time.Now()
-
-	// Generate numbers 1-10
-	numbers := generator(10)
-
-	// Fan-out to 3 processors
-	numProcessors := 20
-	processors := make([]<-chan int, numProcessors)
-	for i := 0; i < numProcessors; i++ {
-		processors[i] = processor(i, numbers)
-	}
-
-	// Fan-in results
-	results := fanIn(processors...)
-
-	// Collect and display results
-	sum := 0
-	count := 0
-	for result := range results {
-		fmt.Printf("Received: %d\n", result)
-		sum += result
-		count++
-	}
-
-	elapsed := time.Since(start)
-	fmt.Printf("\nProcessed %d numbers, sum=%d in %v\n", count, sum, elapsed)
-	fmt.Printf("Expected sum: %d (2+4+6+...+20 = 110)\n", 110)
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected: All 10 numbers processed, sum should be 110
-// Should take less time than sequential processing due to parallelism
-// No race conditions or deadlocks

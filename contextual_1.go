@@ -1,7 +1,7 @@
-// Question 4: Context-based Cancellation
+// Context-based Cancellation
 // Implement a task that can be cancelled using context
 
-package main
+package concurrent_hustles
 
 import (
 	"context"
@@ -60,22 +60,3 @@ func runWithTimeout(timeout time.Duration, numTasks int, taskDuration time.Durat
 	fmt.Printf("runWith took %d millseconds \n", time.Since(start).Milliseconds())
 	return results
 }
-
-func main() {
-	fmt.Println("=== Test 1: Tasks complete before timeout ===")
-	results1 := runWithTimeout(2*time.Second, 3, 500*time.Millisecond)
-	for _, result := range results1 {
-		fmt.Printf("Task %d: Completed=%v, Value=%d\n", result.ID, result.Completed, result.Value)
-	}
-
-	fmt.Println("\n=== Test 2: Tasks cancelled by timeout ===")
-	results2 := runWithTimeout(1*time.Second, 3, 3*time.Second)
-	for _, result := range results2 {
-		fmt.Printf("Task %d: Completed=%v, Value=%d\n", result.ID, result.Completed, result.Value)
-	}
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected Test 1: All 3 tasks should complete (Completed=true)
-// Expected Test 2: All 3 tasks should be cancelled (Completed=false)
-// No goroutine leaks, no race conditions

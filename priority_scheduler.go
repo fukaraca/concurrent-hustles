@@ -1,4 +1,4 @@
-package main
+package concurrent_hustles
 
 import (
 	"container/heap"
@@ -121,17 +121,23 @@ func (p *PriorityScheduler) Start(ctx context.Context, numWorkers int) {
 				case j := <-p.ch:
 					fmt.Printf("Worker %d started working on job %d with priority %d \n", i, j.ID, j.Priority)
 					nctx, cl := context.WithCancel(ctx)
+					p.mu.Lock()
 					j.cancel = cl
 					heap.Push(p.inProgress, j)
+					p.mu.Unlock()
 					close(j.ack)
 					if err := j.Work(nctx); err != nil {
 						cl()
 						fmt.Printf("job %d failed as %q\n", j.ID, err)
+						p.mu.Lock()
 						p.inProgress.Remove(j.ID)
+						p.mu.Unlock()
 						break
 					}
 					fmt.Printf("Worker %d completed working on job %d with priority %d\n", i, j.ID, j.Priority)
+					p.mu.Lock()
 					p.inProgress.Remove(j.ID)
+					p.mu.Unlock()
 					cl()
 				case <-ctx.Done():
 					return
@@ -150,8 +156,13 @@ func (p *PriorityScheduler) Start(ctx context.Context, numWorkers int) {
 				return
 			case <-t.C:
 				p.mu.Lock()
-				if p.inProgress.Len() < numWorkers && p.q.Len() > 0 {
+				lInp := p.inProgress.Len()
+				lQ := p.q.Len()
+				p.mu.Unlock()
+				if lInp < numWorkers && lQ > 0 {
+					p.mu.Lock()
 					item := heap.Pop(p.q).(*PriorityJob)
+					p.mu.Unlock()
 					item.ack = make(chan struct{})
 					p.ch <- item
 					select {
@@ -159,7 +170,6 @@ func (p *PriorityScheduler) Start(ctx context.Context, numWorkers int) {
 					case <-ctx.Done():
 					}
 				}
-				p.mu.Unlock()
 			}
 		}
 	}()
@@ -169,29 +179,37 @@ func (p *PriorityScheduler) Start(ctx context.Context, numWorkers int) {
 var SchedulerClosed = errors.New("scheduler closed")
 
 func (p *PriorityScheduler) Submit(job PriorityJob) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed.Load() || p.numWorkers < 1 {
 		fmt.Println("submit shall not work since scheduler closed")
 		return SchedulerClosed
 	}
+	p.mu.Lock()
+	lInProgres := p.inProgress.Len()
+	p.mu.Unlock()
 
-	if p.inProgress.Len() < p.numWorkers {
+	if lInProgres < p.numWorkers {
 		// workers available, directly send
 		job.ack = make(chan struct{})
 		p.ch <- &job
 		<-job.ack
 	} else {
-		if lowest := p.inProgress.peekLowestPriority(); lowest != nil && lowest.Priority < job.Priority {
+		p.mu.Lock()
+		lowest := p.inProgress.peekLowestPriority()
+		p.mu.Unlock()
+		if lowest != nil && lowest.Priority < job.Priority {
 			// higher priority, preempt
 			fmt.Println("preemption started", job.ID, lowest.ID)
 			lowest.cancel()
 			job.ack = make(chan struct{})
 			p.ch <- &job
 			<-job.ack
+			p.mu.Lock()
 			heap.Push(p.q, lowest)
+			p.mu.Unlock()
 		} else {
+			p.mu.Lock()
 			heap.Push(p.q, &job)
+			p.mu.Unlock()
 		}
 	}
 	return nil
@@ -208,7 +226,10 @@ func (p *PriorityScheduler) Wait() {
 		select {
 		case <-t.C:
 			i++
-			if i > 5 || p.inProgress.Len() == 0 {
+			p.mu.Lock()
+			empty := p.inProgress.Len() == 0
+			p.mu.Unlock()
+			if i > 5 || empty {
 				return
 			}
 		}
@@ -219,304 +240,4 @@ func (p *PriorityScheduler) Stop() {
 	p.Wait()
 	p.cancel()
 	p.wg.Wait()
-}
-
-func main() {
-	fmt.Println("=== Test 1: Basic Priority Ordering ===")
-	testBasicPriority()
-
-	fmt.Println("\n=== Test 2: Preemption Test ===")
-	testPreemption()
-
-	fmt.Println("\n=== Test 3: Multiple Workers ===")
-	testMultipleWorkers()
-
-	fmt.Println("\n=== Test 4: Context Cancellation ===")
-	testContextCancellation()
-
-	fmt.Println("\n=== Test 5: Concurrent Submissions ===")
-	testConcurrentSubmissions()
-
-	fmt.Println("\n=== All tests completed ===")
-}
-
-func testBasicPriority() {
-	scheduler := NewPriorityScheduler()
-	ctx := context.Background()
-
-	var mu sync.Mutex
-	executed := []int{}
-
-	// Submit jobs with different priorities (higher number = higher priority)
-	jobs := []PriorityJob{
-		{ID: 1, Priority: 1, Work: func(cctx context.Context) error {
-			mu.Lock()
-			executed = append(executed, 1)
-			mu.Unlock()
-			t := time.NewTimer(20 * time.Millisecond)
-			defer t.Stop()
-			select {
-			case <-cctx.Done():
-			case <-t.C:
-			}
-			return cctx.Err()
-		}},
-		{ID: 2, Priority: 5, Work: func(cctx context.Context) error {
-			mu.Lock()
-			executed = append(executed, 2)
-			mu.Unlock()
-			t := time.NewTimer(20 * time.Millisecond)
-			defer t.Stop()
-			select {
-			case <-cctx.Done():
-			case <-t.C:
-			}
-			return cctx.Err()
-		}},
-		{ID: 3, Priority: 3, Work: func(cctx context.Context) error {
-			mu.Lock()
-			executed = append(executed, 3)
-			mu.Unlock()
-			t := time.NewTimer(20 * time.Millisecond)
-			defer t.Stop()
-			select {
-			case <-cctx.Done():
-			case <-t.C:
-			}
-			return cctx.Err()
-		}},
-	}
-
-	scheduler.Start(ctx, 1)
-
-	for _, job := range jobs {
-		scheduler.Submit(job)
-	}
-
-	scheduler.Wait()
-	scheduler.Stop()
-
-	fmt.Printf("Execution order: %v (expected high priority first: [2, 3, 1])\n", executed)
-}
-
-func testPreemption() {
-	scheduler := NewPriorityScheduler()
-	ctx := context.Background()
-
-	var mu sync.Mutex
-	executed := []int{}
-	jobStarted := make(chan int, 10)
-
-	// PriorityJob 1: Low priority, long running
-	job1 := PriorityJob{
-		ID:       1,
-		Priority: 1,
-		Work: func(cctx context.Context) error {
-			jobStarted <- 1
-			mu.Lock()
-			executed = append(executed, 1)
-			mu.Unlock()
-			t := time.NewTimer(100 * time.Millisecond)
-			defer t.Stop()
-			select {
-			case <-cctx.Done():
-			case <-t.C:
-			}
-			return cctx.Err()
-		},
-	}
-
-	// PriorityJob 2: High priority, should preempt
-	job2 := PriorityJob{
-		ID:       2,
-		Priority: 10,
-		Work: func(cctx context.Context) error {
-			jobStarted <- 2
-			mu.Lock()
-			executed = append(executed, 2)
-			mu.Unlock()
-			t := time.NewTimer(10 * time.Millisecond)
-			defer t.Stop()
-			select {
-			case <-cctx.Done():
-			case <-t.C:
-			}
-			return cctx.Err()
-		},
-	}
-
-	// PriorityJob 3: Medium priority
-	job3 := PriorityJob{
-		ID:       3,
-		Priority: 5,
-		Work: func(cctx context.Context) error {
-			jobStarted <- 3
-			mu.Lock()
-			executed = append(executed, 3)
-			mu.Unlock()
-			t := time.NewTimer(10 * time.Millisecond)
-			defer t.Stop()
-			select {
-			case <-cctx.Done():
-			case <-t.C:
-			}
-			return cctx.Err()
-		},
-	}
-
-	scheduler.Start(ctx, 1)
-
-	scheduler.Submit(job1)
-	<-jobStarted // Wait for job1 to start
-
-	time.Sleep(20 * time.Millisecond) // Let it run a bit
-
-	scheduler.Submit(job2) // High priority should preempt
-	scheduler.Submit(job3)
-
-	scheduler.Wait()
-	scheduler.Stop()
-
-	mu.Lock()
-	finalOrder := make([]int, len(executed))
-	copy(finalOrder, executed)
-	mu.Unlock()
-
-	fmt.Printf("Execution order: %v\n", finalOrder)
-	fmt.Printf("Expected: PriorityJob 1 starts, gets preempted by PriorityJob 2 (priority 10), then PriorityJob 3 (priority 5), then PriorityJob 1 completes\n")
-	fmt.Printf("Note: PriorityJob 1 should appear twice in execution if preempted and re-queued\n")
-}
-
-func testMultipleWorkers() {
-	scheduler := NewPriorityScheduler()
-	ctx := context.Background()
-
-	var mu sync.Mutex
-	executed := []int{}
-
-	numJobs := 10
-	jobs := make([]PriorityJob, numJobs)
-
-	for i := 0; i < numJobs; i++ {
-		id := i + 1
-		jobs[i] = PriorityJob{
-			ID:       id,
-			Priority: id, // Priority equals ID
-			Work: func(cctx context.Context) error {
-				mu.Lock()
-				executed = append(executed, id)
-				mu.Unlock()
-				t := time.NewTimer(200 * time.Millisecond)
-				defer t.Stop()
-				select {
-				case <-cctx.Done():
-				case <-t.C:
-				}
-				return cctx.Err()
-			},
-		}
-	}
-
-	scheduler.Start(ctx, 3) // 3 workers
-
-	for _, job := range jobs {
-		scheduler.Submit(job)
-	}
-
-	scheduler.Wait()
-	scheduler.Stop()
-
-	fmt.Printf("Executed %d jobs with 3 workers\n", len(executed))
-	fmt.Printf("Execution order: %v\n", executed)
-	fmt.Printf("Higher priority jobs should generally execute first\n")
-}
-
-func testContextCancellation() {
-	scheduler := NewPriorityScheduler()
-	ctx, cancel := context.WithCancel(context.Background())
-
-	var mu sync.Mutex
-	executed := []int{}
-
-	scheduler.Start(ctx, 1)
-	for i := 5; i > 0; i-- {
-		id := i
-		job := PriorityJob{
-			ID:       id,
-			Priority: id,
-			Work: func(cctx context.Context) error {
-				mu.Lock()
-				executed = append(executed, id)
-				mu.Unlock()
-				t := time.NewTimer(50 * time.Millisecond)
-				defer t.Stop()
-				select {
-				case <-cctx.Done():
-				case <-t.C:
-				}
-				return cctx.Err()
-			},
-		}
-		scheduler.Submit(job)
-	}
-
-	time.Sleep(80 * time.Millisecond)
-	cancel() // Cancel context
-
-	time.Sleep(50 * time.Millisecond)
-	scheduler.Stop()
-
-	mu.Lock()
-	fmt.Printf("Executed %d jobs before cancellation (expected < 5): %v\n", len(executed), executed)
-	mu.Unlock()
-}
-
-func testConcurrentSubmissions() {
-	scheduler := NewPriorityScheduler()
-	ctx := context.Background()
-
-	var mu sync.Mutex
-	executed := make(map[int]bool)
-
-	scheduler.Start(ctx, 2)
-
-	var wg sync.WaitGroup
-	numGoroutines := 5
-	jobsPerGoroutine := 4
-
-	for g := 0; g < numGoroutines; g++ {
-		wg.Add(1)
-		go func(goroutineID int) {
-			defer wg.Done()
-			for j := 0; j < jobsPerGoroutine; j++ {
-				jobID := goroutineID*jobsPerGoroutine + j
-				job := PriorityJob{
-					ID:       jobID,
-					Priority: jobID % 10,
-					Work: func(cctx context.Context) error {
-						mu.Lock()
-						executed[jobID] = true
-						mu.Unlock()
-						t := time.NewTimer(5 * time.Millisecond)
-						defer t.Stop()
-						select {
-						case <-cctx.Done():
-						case <-t.C:
-						}
-						return cctx.Err()
-					},
-				}
-				scheduler.Submit(job)
-			}
-		}(g)
-	}
-
-	wg.Wait()
-	scheduler.Wait()
-	scheduler.Stop()
-
-	mu.Lock()
-	fmt.Printf("Executed %d jobs from concurrent submissions (expected %d)\n",
-		len(executed), numGoroutines*jobsPerGoroutine)
-	mu.Unlock()
 }

@@ -1,10 +1,9 @@
-// Question 9: Thread-Safe Cache with Expiration
+// Thread-Safe Cache with Expiration
 // Implement a concurrent cache with TTL (time-to-live) support
 
-package main
+package concurrent_hustles
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
@@ -93,51 +92,3 @@ func (c *Cache) Close() {
 		c.wg.Wait()
 	})
 }
-
-func main() {
-	cache := NewCache(500 * time.Millisecond)
-	defer cache.Close()
-
-	// Test 1: Basic operations
-	fmt.Println("=== Test 1: Basic operations ===")
-	cache.Set("key1", "value1", 2*time.Second)
-	if val, ok := cache.Get("key1"); ok {
-		fmt.Printf("Got key1: %v\n", val)
-	}
-
-	// Test 2: Expiration
-	fmt.Println("\n=== Test 2: Expiration ===")
-	cache.Set("key2", "value2", 800*time.Millisecond)
-	if val, ok := cache.Get("key2"); ok {
-		fmt.Printf("Got key2 immediately: %v\n", val)
-	}
-
-	time.Sleep(1 * time.Second)
-	if _, ok := cache.Get("key2"); !ok {
-		fmt.Println("key2 expired (expected)")
-	}
-
-	// Test 3: Concurrent access
-	fmt.Println("\n=== Test 3: Concurrent access ===")
-	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			key := fmt.Sprintf("key%d", id)
-			cache.Set(key, id, 2*time.Second)
-			if val, ok := cache.Get(key); ok {
-				fmt.Printf("Goroutine %d: got value %v\n", id, val)
-			}
-		}(i)
-	}
-	wg.Wait()
-
-	time.Sleep(600 * time.Millisecond)
-	fmt.Println("\nCache test completed")
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected: All operations should work correctly
-// Expired items should not be retrievable
-// Clean shutdown with Close()

@@ -1,8 +1,8 @@
-// Question 1: Worker Pool Pattern
+// Worker Pool Pattern
 // Implement a worker pool that processes jobs concurrently.
 // The pool should have a fixed number of workers and handle jobs from a queue.
 
-package main
+package concurrent_hustles
 
 import (
 	"fmt"
@@ -76,28 +76,3 @@ func (wp *WorkerPool) Stop() {
 	wp.wg.Wait()
 	close(wp.results)
 }
-
-func main() {
-	pool := NewWorkerPool(3)
-	pool.Start()
-
-	go func() {
-		for i := range 10 {
-			pool.Submit(Job{
-				ID:    i + 1,
-				Value: i,
-			})
-		}
-		close(pool.jobs)
-	}()
-	go pool.Stop()
-	// Collect results
-	for r := range pool.results {
-		fmt.Printf("Job %d: %d^2 = %d\n", r.ID, r.ID+1, r.Val)
-	}
-	fmt.Println("All jobs completed")
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected output: All 10 jobs should complete with correct squared values
-// No race conditions should be detected

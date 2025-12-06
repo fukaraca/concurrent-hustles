@@ -1,7 +1,7 @@
-// Question 2: Rate Limiter using Channels
+// Rate Limiter using Channels
 // Implement a rate limiter that allows only N requests per second
 
-package main
+package concurrent_hustles
 
 import (
 	"fmt"
@@ -71,32 +71,3 @@ func (rl *RateLimiter) Stop() {
 func (rl *RateLimiter) IsStopped() bool {
 	return rl.stopped.Load()
 }
-
-func main() {
-	limiter := NewRateLimiter(2) // 2 requests per second
-	go limiter.Start()
-	defer limiter.Stop()
-
-	start := time.Now()
-	var wg sync.WaitGroup
-
-	// Try to make 6 requests
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			if limiter.Allow() {
-				elapsed := time.Since(start).Seconds()
-				fmt.Printf("Request %d allowed at %.2fs\n", id, elapsed)
-			}
-		}(i)
-	}
-
-	wg.Wait()
-	elapsed := time.Since(start).Seconds()
-	fmt.Printf("Total time: %.2fs (should be ~3s for 6 requests at 2/sec)\n", elapsed)
-}
-
-// Test: Run with `go run main.go` and `go test -race`
-// Expected: 6 requests should take approximately 3 seconds
-// Requests should be evenly spaced at ~0.5s intervals
